@@ -1,8 +1,8 @@
 //
 //  SceneDelegate.swift
-//  GeoFencing
+//  SomeApp
 //
-//  Created by Mustafa Khalil on 1/8/20.
+//  Created by Mustafa Khalil on 1/7/20.
 //  Copyright © 2020 Mustafa Khalil. All rights reserved.
 //
 
