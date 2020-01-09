@@ -14,21 +14,20 @@ func GenerateLocations() -> [Distance] {
     for i in 0...100 {
         let long = Double.random(in: 122.004032...122.057419)
         let lat = Double.random(in: 37.308548...37.366830)
-        locations.append(Distance(coords: CLLocation(latitude: lat, longitude: -long), distance: .infinity, id: "\(i)"))
+        locations.append(Distance(coords: CLLocation(latitude: lat, longitude: -long), id: "\(i)"))
     }
     return locations
 }
 
 struct Distance: Comparable {
     var coords: CLLocation
-    var distance: Double
     let id: String
     
     static func >(lhs: Distance, rhs: Distance) -> Bool {
-        lhs.distance > rhs.distance
+        lhs.id > rhs.id
     }
     static func <(lhs: Distance, rhs: Distance) -> Bool {
-        lhs.distance < rhs.distance
+        lhs.id < rhs.id
     }
 }
 
@@ -36,20 +35,7 @@ class ViewController: UIViewController, TrackerDelegate, MKMapViewDelegate {
     func updateUser(location: CLLocation) {
         map.centerCoordinate = location.coordinate
         print("Update User location")
-        var shouldTrack: [Distance] = []
-        Tracker.shared.stopTracking()
-        for i in locations {
-            let distance = location.distance(from: i.coords)
-            shouldTrack.append(Distance(coords: i.coords, distance: distance, id: i.id))
-        }
-        shouldTrack.sort { (d1, d2) -> Bool in
-            return d1 < d2
-        }
-        for i in 0..<20 {
-            Tracker.shared.trackLocation(location: shouldTrack[i])
-        }
-        print(shouldTrack[0].distance)
-        print("Monitoring")
+        Tracker.shared.track(locations, aroundUsers: location)
     }
 
     var locations = GenerateLocations()
@@ -109,6 +95,8 @@ protocol TrackerDelegate: NSObjectProtocol {
 }
 
 class Tracker: NSObject, CLLocationManagerDelegate {
+    private var radius = 200
+    
     var location = CLLocationManager()
     var startTime: CFAbsoluteTime?
     weak var delegate: TrackerDelegate?
@@ -123,10 +111,39 @@ class Tracker: NSObject, CLLocationManagerDelegate {
         requestAuth(str: "Prepare")
     }
     
-    func stopTracking() {
-        location.monitoredRegions.forEach { (r) in
-            location.stopMonitoring(for: r)
+    func track(_ locations: [Distance], aroundUsers userLocation: CLLocation) {
+        
+        let set = Tracker.shared.stopTracking(outside: userLocation)
+        
+        var shouldTrack = locations
+        shouldTrack.sort { (d1, d2) -> Bool in
+            return userLocation.distance(from: d1.coords) < userLocation.distance(from: d2.coords)
         }
+        
+        var tracking: [String] = []
+        for i in 0..<20 {
+            if !set.contains(where: { $0.identifier == shouldTrack[i].id }) {
+                tracking.append(shouldTrack[i].id)
+                Tracker.shared.trackLocation(location: shouldTrack[i])
+            }
+        }
+        print("Start Monitoring \(tracking) without count: \(tracking.count)")
+    }
+    
+    func stopTracking(outside currentLocation: CLLocation) -> Set<CLRegion> {
+        var tracking: [String] = []
+        var currentlyTracking = Set<CLRegion>()
+        location.monitoredRegions.forEach { (r) in
+            if let monitored = r as? CLCircularRegion, !monitored.contains(currentLocation.coordinate) {
+                tracking.append(r.identifier)
+                location.stopMonitoring(for: r)
+            } else {
+                currentlyTracking.insert(r)
+            }
+        }
+        
+        print("Stop Monitoring \(tracking) without count: \(tracking.count)")
+        return currentlyTracking
     }
     
     fileprivate func requestAuth(str: String) {
@@ -158,7 +175,7 @@ class Tracker: NSObject, CLLocationManagerDelegate {
     }
     
     func trackLocation(location coords: Distance) {
-        let region = CLCircularRegion(center: coords.coords.coordinate, radius: 50, identifier: coords.id)
+        let region = CLCircularRegion(center: coords.coords.coordinate, radius: 200, identifier: coords.id)
         location.startMonitoring(for: region)
     }
     
